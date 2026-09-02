@@ -1,8 +1,11 @@
 package internal
 
 import (
+	"context"
 	"testing"
 
+	resourcefw "github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/slack-go/slack"
 	"go.uber.org/mock/gomock"
@@ -97,4 +100,52 @@ resource "slack_app" "test" {
 		}
 	}
 }`
+}
+
+// computedOnlyAppAttributes are the attributes Slack decides once, when the
+// app is created, and never reports again.
+var computedOnlyAppAttributes = []string{
+	"id",
+	"client_id",
+	"client_secret",
+	"verification_token",
+	"signing_secret",
+	"oauth_authorize_url",
+}
+
+func TestAppResourceComputedAttributesKeepStateAcrossUpdates(t *testing.T) {
+	t.Parallel()
+
+	res := &resourcefw.SchemaResponse{}
+	NewResourceApp().Schema(context.Background(), resourcefw.SchemaRequest{}, res)
+	if res.Diagnostics.HasError() {
+		t.Fatalf("unexpected schema diagnostics: %v", res.Diagnostics)
+	}
+
+	for _, name := range computedOnlyAppAttributes {
+		attr, ok := res.Schema.Attributes[name].(schema.StringAttribute)
+		if !ok {
+			t.Fatalf("attribute %q is missing or is not a StringAttribute", name)
+		}
+		if !attr.Computed {
+			t.Errorf("attribute %q should be computed", name)
+		}
+		if len(attr.PlanModifiers) != 1 {
+			t.Errorf("attribute %q: got %d plan modifiers, want 1", name, len(attr.PlanModifiers))
+			continue
+		}
+		if _, ok := attr.PlanModifiers[0].(createOnlyValueModifier); !ok {
+			t.Errorf("attribute %q: got plan modifier %T, want createOnlyValueModifier", name, attr.PlanModifiers[0])
+		}
+	}
+
+	for _, name := range []string{"client_secret", "verification_token", "signing_secret"} {
+		attr, ok := res.Schema.Attributes[name].(schema.StringAttribute)
+		if !ok {
+			t.Fatalf("attribute %q is missing or is not a StringAttribute", name)
+		}
+		if !attr.Sensitive {
+			t.Errorf("attribute %q should stay sensitive", name)
+		}
+	}
 }

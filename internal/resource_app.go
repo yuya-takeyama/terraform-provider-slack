@@ -7,6 +7,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/slack-go/slack"
 )
@@ -124,28 +125,41 @@ func (r *ResourceApp) Schema(_ context.Context, _ resource.SchemaRequest, res *r
 		ElementType: types.StringType,
 	}
 
+	// None of the computed-only attributes below can change as the result of
+	// an update: the app ID is stable for the lifetime of the app and the
+	// credentials are only ever returned by apps.manifest.create. Keeping the
+	// prior state instead of marking them unknown avoids a spurious
+	// "(known after apply)" on every plan that updates the app.
+	keepState := []planmodifier.String{createOnlyValue()}
+
 	res.Schema = schema.Schema{
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				Computed: true,
+				Computed:      true,
+				PlanModifiers: keepState,
 			},
 			"client_id": schema.StringAttribute{
-				Computed: true,
+				Computed:      true,
+				PlanModifiers: keepState,
 			},
 			"client_secret": schema.StringAttribute{
-				Computed:  true,
-				Sensitive: true,
+				Computed:      true,
+				Sensitive:     true,
+				PlanModifiers: keepState,
 			},
 			"verification_token": schema.StringAttribute{
-				Computed:  true,
-				Sensitive: true,
+				Computed:      true,
+				Sensitive:     true,
+				PlanModifiers: keepState,
 			},
 			"signing_secret": schema.StringAttribute{
-				Computed:  true,
-				Sensitive: true,
+				Computed:      true,
+				Sensitive:     true,
+				PlanModifiers: keepState,
 			},
 			"oauth_authorize_url": schema.StringAttribute{
-				Computed: true,
+				Computed:      true,
+				PlanModifiers: keepState,
 			},
 			"display_information": schema.SingleNestedAttribute{
 				Required: true,
