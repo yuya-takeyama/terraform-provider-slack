@@ -556,7 +556,7 @@ func stateFromManifest(ctx context.Context, manifest *slack.Manifest, existing R
 			userEvents, d := listFromStrings(ctx, manifest.Settings.EventSubscriptions.UserEvents)
 			diags.Append(d...)
 			settings.EventSubscriptions = &AppEventSubscriptions{
-				RequestURL: types.StringValue(manifest.Settings.EventSubscriptions.RequestUrl),
+				RequestURL: optionalString(manifest.Settings.EventSubscriptions.RequestUrl),
 				BotEvents:  botEvents,
 				UserEvents: userEvents,
 			}
@@ -564,14 +564,26 @@ func stateFromManifest(ctx context.Context, manifest *slack.Manifest, existing R
 		if !interactivityZero {
 			settings.Interactivity = &AppInteractivity{
 				IsEnabled:             types.BoolValue(manifest.Settings.Interactivity.IsEnabled),
-				RequestURL:            types.StringValue(manifest.Settings.Interactivity.RequestUrl),
-				MessageMenuOptionsURL: types.StringValue(manifest.Settings.Interactivity.MessageMenuOptionsUrl),
+				RequestURL:            optionalString(manifest.Settings.Interactivity.RequestUrl),
+				MessageMenuOptionsURL: optionalString(manifest.Settings.Interactivity.MessageMenuOptionsUrl),
 			}
 		}
 		state.Settings = settings
 	}
 
 	return state, diags
+}
+
+// optionalString maps a URL that Slack leaves out of the exported manifest
+// onto null rather than the empty string. slack.Manifest decodes a missing
+// URL into an empty Go string, and storing that empty string in state makes
+// every plan report a "" -> null diff against a configuration that simply
+// omits the optional attribute.
+func optionalString(s string) types.String {
+	if s == "" {
+		return types.StringNull()
+	}
+	return types.StringValue(s)
 }
 
 func isZeroAppHome(h slack.AppHome) bool {
