@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -98,10 +99,7 @@ func (c *Client) CreateAppManifest(ctx context.Context, manifest *slack.Manifest
 	}
 
 	if !resp.Ok {
-		if len(resp.Errors) > 0 {
-			return nil, fmt.Errorf("apps.manifest.create: %s: %+v", resp.Error, resp.Errors)
-		}
-		return nil, fmt.Errorf("apps.manifest.create: %s", resp.Error)
+		return nil, fmt.Errorf("apps.manifest.create: %s", manifestErrorDetail(errors.New(resp.Error), resp.Errors))
 	}
 
 	return &resp.CreateResponse, nil

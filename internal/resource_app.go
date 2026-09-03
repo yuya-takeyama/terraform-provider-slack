@@ -359,19 +359,60 @@ func (r *ResourceApp) Update(ctx context.Context, req resource.UpdateRequest, re
 		return
 	}
 
+	var state ResourceAppState
+	diags = req.State.Get(ctx, &state)
+	res.Diagnostics.Append(diags...)
+	if res.Diagnostics.HasError() {
+		return
+	}
+
 	manifest, diags := manifestFromState(ctx, plan)
 	res.Diagnostics.Append(diags...)
 	if res.Diagnostics.HasError() {
 		return
 	}
 
-	if _, err := r.client.UpdateManifestContext(ctx, manifest, "", plan.ID.ValueString()); err != nil {
-		res.Diagnostics.AddError("failed to update app", err.Error())
+	// The app ID has to come from the prior state: it is a computed attribute
+	// without a plan modifier, so the planned value is unknown and
+	// plan.ID.ValueString() would send an empty app_id, which Slack rejects
+	// with "invalid_arguments".
+	updated, err := r.client.UpdateManifestContext(ctx, manifest, "", state.ID.ValueString())
+	if err != nil {
+		var validationErrors []slack.ManifestValidationError
+		if updated != nil {
+			validationErrors = updated.Errors
+		}
+		res.Diagnostics.AddError("failed to update app", manifestErrorDetail(err, validationErrors))
 		return
 	}
 
+	copyCreateOnlyAttributes(&plan, state)
+
 	diags = res.State.Set(ctx, &plan)
 	res.Diagnostics.Append(diags...)
+}
+
+// copyCreateOnlyAttributes carries the attributes that only apps.manifest.create
+// ever reports over from the prior state into the planned state. None of them
+// can change through an update, but they are computed without a plan modifier
+// and are therefore unknown in the plan; writing the prior values keeps the
+// known app ID, and the nulls of an imported app, in the state.
+func copyCreateOnlyAttributes(plan *ResourceAppState, state ResourceAppState) {
+	for _, attr := range []struct {
+		planned *types.String
+		prior   types.String
+	}{
+		{&plan.ID, state.ID},
+		{&plan.ClientID, state.ClientID},
+		{&plan.ClientSecret, state.ClientSecret},
+		{&plan.VerificationToken, state.VerificationToken},
+		{&plan.SigningSecret, state.SigningSecret},
+		{&plan.OAuthAuthorizeURL, state.OAuthAuthorizeURL},
+	} {
+		if attr.planned.IsUnknown() {
+			*attr.planned = attr.prior
+		}
+	}
 }
 
 func (r *ResourceApp) Delete(ctx context.Context, req resource.DeleteRequest, res *resource.DeleteResponse) {
